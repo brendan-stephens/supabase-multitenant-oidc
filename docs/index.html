@@ -260,13 +260,13 @@ footer a:hover{text-decoration:underline}
   <div class="container">
     <div class="section-label">Row Level Security</div>
     <h2>Each user only sees their own data</h2>
-    <p class="section-sub">Tenant functions extract the <code style="font-family:monospace;color:#3ecf8e;font-size:13px">sub</code> claim from the verified JWT and use it as <code style="font-family:monospace;color:#3ecf8e;font-size:13px">user_id</code>. Postgres RLS enforces per-user row isolation.</p>
+    <p class="section-sub">PostgREST validates the CC JWT and sets <code style="font-family:monospace;color:#3ecf8e;font-size:13px">auth.uid()</code> to the JWT <code style="font-family:monospace;color:#3ecf8e;font-size:13px">sub</code>. RLS enforces per-user isolation for every read and write — functions pass no <code style="font-family:monospace;color:#3ecf8e;font-size:13px">user_id</code> at all.</p>
 
     <div class="rls-grid" id="rls-grid">
       <!-- Left: JWT + Policy -->
       <div>
         <div class="rls-card">
-          <div class="rls-card-hdr">🔐 Incoming JWT (verified by CC's public key)</div>
+          <div class="rls-card-hdr">🔐 Incoming JWT (verified by PostgREST via registered OIDC provider)</div>
           <div class="rls-card-body">
             <div class="jwt-box">
               <div><span class="jk">iss: </span><span class="jv">"…supabase.co/functions/v1/oidc"</span></div>
@@ -279,13 +279,13 @@ footer a:hover{text-decoration:underline}
         <div class="rls-card" style="margin-top:14px">
           <div class="rls-card-hdr">📋 RLS Policy on tenant_notes</div>
           <div class="rls-card-body">
-            <div class="policy-box"><span class="pc">-- only your rows come back</span>
+            <div class="policy-box"><span class="pc">-- reads: only your rows come back</span>
+<span class="pc">-- writes: user_id filled by DEFAULT auth.uid()</span>
 <span class="pk">CREATE POLICY</span> <span class="ps">"own rows"</span>
   <span class="pk">ON</span> tenant_notes <span class="pk">FOR ALL</span>
   <span class="pk">TO</span> authenticated
-  <span class="pk">USING</span> (
-    user_id = <span class="pf">auth.uid()</span>
-  );</div>
+  <span class="pk">USING</span> (user_id = <span class="pf">auth.uid()</span>)
+  <span class="pk">WITH CHECK</span> (user_id = <span class="pf">auth.uid()</span>);</div>
           </div>
         </div>
       </div>
