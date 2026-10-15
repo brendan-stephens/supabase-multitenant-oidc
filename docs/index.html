@@ -399,7 +399,7 @@ footer a:hover{text-decoration:underline}
 <section>
   <div class="container">
     <div class="section-label">Extensibility</div>
-    <h2>Adding a new tenant takes three steps</h2>
+    <h2>Adding a new tenant takes four steps</h2>
     <p class="section-sub">Because the Command Center exposes a standard OIDC discovery document, new tenants self-configure — no key exchange, no shared secrets.</p>
 
     <div class="add-tenant-intro">
@@ -407,7 +407,7 @@ footer a:hover{text-decoration:underline}
         <span>OIDC Discovery</span>
         /.well-known/openid-configuration
       </div>
-      <p>The discovery endpoint tells any OAuth 2.1 client where to find the JWKS, token endpoint, and supported algorithms. Tenant functions call <strong>createRemoteJWKSet</strong> pointing at the discovery URL — the key location is resolved automatically. Adding a tenant means wiring up that URL and registering a <code style="color:#3ecf8e;font-family:monospace">client_id</code> — nothing else changes on the Command Center side.</p>
+      <p>The discovery endpoint tells any OAuth 2.1 client where to find the JWKS, token endpoint, and supported algorithms. Tenant projects register the CC as a <strong>Custom OIDC provider</strong> — Supabase resolves the JWKS automatically and PostgREST validates CC-issued tokens natively. Adding a tenant means registering the provider, adding a <code style="color:#3ecf8e;font-family:monospace">client_id</code>, and granting user access — nothing else changes on the Command Center side.</p>
     </div>
 
     <div class="steps-list">
@@ -415,10 +415,8 @@ footer a:hover{text-decoration:underline}
         <div class="step-num">1</div>
         <div class="step-body">
           <h4>Create a new Supabase project and deploy the data function</h4>
-          <p>Copy either tenant function, update the two constants at the top, and deploy.</p>
+          <p>Copy either tenant function, update the one constant at the top, and deploy.</p>
           <div class="code-block"><span class="cb-comment">// tenant-gamma/supabase/functions/data/index.ts</span>
-<span class="cb-kw">const</span> <span class="cb-val">CC_ISSUER</span> = <span class="cb-str">"https://&lt;CC_PROJECT_REF&gt;.supabase.co/functions/v1/oidc"</span>;
-<span class="cb-kw">const</span> <span class="cb-val">JWKS</span>     = createRemoteJWKSet(<span class="cb-kw">new</span> <span class="cb-fn">URL</span>(<span class="cb-str">`${CC_ISSUER}/jwks`</span>));
 <span class="cb-kw">const</span> <span class="cb-val">TENANT_ID</span> = <span class="cb-str">"tenant-gamma"</span>;</div>
           <div class="code-block" style="margin-top:8px">supabase functions deploy data --project-ref &lt;GAMMA_REF&gt;</div>
         </div>
@@ -426,6 +424,16 @@ footer a:hover{text-decoration:underline}
 
       <div class="step-item">
         <div class="step-num">2</div>
+        <div class="step-body">
+          <h4>Register the CC as a Custom OIDC provider on the new tenant project</h4>
+          <p>In the Supabase Dashboard: <strong>Authentication → Third-Party Auth → Add provider → Custom OIDC</strong>. Enter the CC issuer URL. Supabase fetches the JWKS automatically via the discovery document — PostgREST then validates CC-issued tokens natively.</p>
+          <div class="code-block"><span class="cb-comment">-- Dashboard: Authentication → Third-Party Auth → Add provider → Custom OIDC</span>
+https://&lt;CC_PROJECT_REF&gt;.supabase.co/functions/v1/oidc</div>
+        </div>
+      </div>
+
+      <div class="step-item">
+        <div class="step-num">3</div>
         <div class="step-body">
           <h4>Register the client in Command Center</h4>
           <p>One row in <code style="color:#3ecf8e;font-family:monospace">oauth_clients</code>. The CC function picks it up immediately — no redeploy needed.</p>
@@ -439,7 +447,7 @@ footer a:hover{text-decoration:underline}
       </div>
 
       <div class="step-item">
-        <div class="step-num">3</div>
+        <div class="step-num">4</div>
         <div class="step-body">
           <h4>Grant users access</h4>
           <p>Add <code style="color:#3ecf8e;font-family:monospace">tenant-gamma</code> to a user's <code style="color:#3ecf8e;font-family:monospace">app_metadata.allowed_tenants</code> in the CC project. Users without this array set have access to all tenants.</p>
