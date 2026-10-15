@@ -63,7 +63,7 @@ Deno.serve(async (req: Request) => {
     const { content } = await req.json();
     const { data, error } = await supabase
       .from("tenant_notes")
-      .insert({ user_id: claims.sub, content })
+      .insert({ content })
       .select("id, content, created_at")
       .single();
     if (error) return Response.json({ error: error.message }, { status: error.status ?? 500, headers: cors });
