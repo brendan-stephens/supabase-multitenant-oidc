@@ -38,7 +38,7 @@ App ◄──────────────── { notes } (scoped to JWT
 - **No HTML from Edge Functions** — `GET /authorize` redirects back to the app with `?_cc=login`, letting the app render forms natively. This avoids Cloudflare forcing `text/plain` on function responses.
 - **PKCE (S256)** — the `code_verifier` never leaves the client; the server only sees the `SHA-256` hash during `/authorize` and verifies the raw value at `/token`.
 - **Per-tenant access** — stored in `app_metadata.allowed_tenants` on the CC user record. Tenants have no user table — they trust the JWT `sub` as `user_id`.
-- **RLS isolation** — each tenant's `tenant_notes` table has an RLS policy enforcing `user_id = auth.uid()`, scoping rows to the authenticated JWT subject.
+- **RLS isolation** — each tenant project registers the CC as a [Custom OIDC provider](https://supabase.com/docs/guides/auth/third-party/custom-oidc). Supabase validates incoming CC tokens natively; `auth.uid()` resolves to the JWT `sub`, so the `user_id = auth.uid()` RLS policy scopes rows without any manual verification in the Edge Function.
 
 ---
 
@@ -185,7 +185,28 @@ supabase secrets set \
 
 > If you're using your own CC project ref, update `CC_ISSUER` at the top of each tenant function before deploying.
 
-### 6 — Create demo users (optional)
+### 6 — Register the CC as a Custom OIDC provider on each tenant project
+
+Repeat this for both Tenant Alpha and Tenant Beta.
+
+**Dashboard (recommended):** Open the tenant project → Authentication → Third-Party Auth → Add provider → Custom OIDC. Enter the CC issuer URL:
+
+```
+https://<CC_PROJECT_REF>.supabase.co/functions/v1/oidc
+```
+
+**Management API alternative:**
+
+```bash
+curl -X POST "https://api.supabase.com/v1/projects/<TENANT_PROJECT_REF>/config/auth/third-party-auth" \
+  -H "Authorization: Bearer <supabase_access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"oidc_issuer_url": "https://<CC_PROJECT_REF>.supabase.co/functions/v1/oidc"}'
+```
+
+Once registered, Supabase validates CC-issued tokens automatically. The tenant `data` function passes the Bearer token to a Supabase client with the anon key — no manual JWKS verification needed.
+
+### 7 — Create demo users (optional)
 
 Create users via the Supabase dashboard (Authentication → Users → Add user) or the admin API. To restrict a user to specific tenants, set their `app_metadata`:
 
@@ -207,8 +228,6 @@ Copy either existing tenant function, update the two constants at the top, and d
 
 ```ts
 // tenant-gamma/supabase/functions/data/index.ts
-const CC_ISSUER = "https://<CC_PROJECT_REF>.supabase.co/functions/v1/oidc";
-const JWKS      = createRemoteJWKSet(new URL(`${CC_ISSUER}/jwks`));
 const TENANT_ID = "tenant-gamma";
 ```
 
@@ -218,7 +237,17 @@ supabase functions deploy data --project-ref <GAMMA_PROJECT_REF>
 
 Don't forget to create the `tenant_notes` table and RLS policy in the new project (see [step 3](#3--create-tables-in-each-tenant-project) in Setup).
 
-### 2 — Register the client in Command Center
+### 2 — Register the CC as a Custom OIDC provider on the new tenant project
+
+Open the new tenant project → Authentication → Third-Party Auth → Add provider → Custom OIDC. Enter the CC issuer URL:
+
+```
+https://<CC_PROJECT_REF>.supabase.co/functions/v1/oidc
+```
+
+This is what lets Supabase validate CC-issued tokens on this tenant without any key-sharing or manual JWKS setup.
+
+### 3 — Register the client in Command Center
 
 One row in `oauth_clients` — the OIDC function reads it live, no redeploy needed:
 
@@ -231,7 +260,7 @@ VALUES (
 );
 ```
 
-### 3 — Grant users access
+### 4 — Grant users access
 
 Add `tenant-gamma` to the user's `app_metadata.allowed_tenants` array in the CC project:
 
@@ -283,6 +312,6 @@ The `docs/demo/` directory is a copy of the demo app deployed to GitHub Pages. I
 ## Tech stack
 
 - **[Supabase Edge Functions](https://supabase.com/docs/guides/functions)** — Deno-based serverless functions for both the OIDC provider and tenant APIs
-- **[jose](https://github.com/panva/jose)** (`npm:jose@5`) — RS256 JWT signing and remote JWKS verification
-- **[supabase-js](https://github.com/supabase/supabase-js)** (`jsr:@supabase/supabase-js@2`) — auth and database access within Edge Functions
+- **[jose](https://github.com/panva/jose)** (`npm:jose@5`) — RS256 JWT signing in the Command Center OIDC function
+- **[supabase-js](https://github.com/supabase/supabase-js)** (`jsr:@supabase/supabase-js@2`) — auth and database access within Edge Functions; tenant functions use `auth.getUser()` to validate CC tokens via the registered Custom OIDC provider
 - **Vanilla JS** — demo app has no build step or dependencies

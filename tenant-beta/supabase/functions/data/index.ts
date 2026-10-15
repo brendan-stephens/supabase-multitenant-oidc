@@ -1,9 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { createRemoteJWKSet, jwtVerify } from "npm:jose@5";
 
-const CC_ISSUER = "https://mqawauxnyjkgcfwgahmh.supabase.co/functions/v1/oidc";
-const JWKS = createRemoteJWKSet(new URL(`${CC_ISSUER}/jwks`));
 const TENANT_ID = "tenant-beta";
 
 const cors = {
@@ -12,17 +9,16 @@ const cors = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
-async function verifyToken(req: Request): Promise<{ sub: string; email: string } | null> {
-  const auth = req.headers.get("Authorization");
-  if (!auth?.startsWith("Bearer ")) return null;
+// Decode JWT claims without signature verification.
+// Cryptographic validation happens in PostgREST via the registered OIDC provider;
+// we read claims here only for response metadata and the INSERT user_id.
+function jwtClaims(token: string): { sub: string; email: string } | null {
   try {
-    const { payload } = await jwtVerify(auth.slice(7), JWKS, {
-      issuer: CC_ISSUER,
-      audience: TENANT_ID,
-    });
-    return { sub: payload.sub!, email: payload.email as string };
-  } catch (e) {
-    console.error("[auth]", e);
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+    return payload.sub ? { sub: payload.sub, email: payload.email ?? "" } : null;
+  } catch {
     return null;
   }
 }
@@ -30,13 +26,25 @@ async function verifyToken(req: Request): Promise<{ sub: string; email: string }
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: cors });
 
-  const user = await verifyToken(req);
-  if (!user) return Response.json({ error: "unauthorized" }, { status: 401, headers: cors });
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return Response.json({ error: "unauthorized" }, { status: 401, headers: cors });
+  }
 
+  const claims = jwtClaims(authHeader.slice(7));
+  if (!claims) {
+    return Response.json({ error: "unauthorized" }, { status: 401, headers: cors });
+  }
+
+  // PostgREST validates the CC JWT against the registered OIDC provider's JWKS.
+  // RLS enforces user_id = auth.uid() for all queries.
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-    { auth: { persistSession: false } }
+    Deno.env.get("SUPABASE_ANON_KEY")!,
+    {
+      global: { headers: { Authorization: authHeader } },
+      auth: { persistSession: false },
+    }
   );
 
   const url = new URL(req.url);
@@ -46,20 +54,19 @@ Deno.serve(async (req: Request) => {
     const { data, error } = await supabase
       .from("tenant_notes")
       .select("id, content, created_at")
-      .eq("user_id", user.sub)
       .order("created_at", { ascending: false });
-    if (error) return Response.json({ error: error.message }, { status: 500, headers: cors });
-    return Response.json({ user, tenant: TENANT_ID, notes: data }, { headers: cors });
+    if (error) return Response.json({ error: error.message }, { status: error.status ?? 500, headers: cors });
+    return Response.json({ user: claims, tenant: TENANT_ID, notes: data }, { headers: cors });
   }
 
   if (req.method === "POST" && (path === "/" || path === "/notes")) {
     const { content } = await req.json();
     const { data, error } = await supabase
       .from("tenant_notes")
-      .insert({ user_id: user.sub, content })
+      .insert({ user_id: claims.sub, content })
       .select("id, content, created_at")
       .single();
-    if (error) return Response.json({ error: error.message }, { status: 500, headers: cors });
+    if (error) return Response.json({ error: error.message }, { status: error.status ?? 500, headers: cors });
     return Response.json(data, { status: 201, headers: cors });
   }
 
