@@ -52,6 +52,9 @@ h1 em{font-style:normal;color:#3ecf8e}
 .step-ind{font-size:12px;color:#4a5568;font-family:'SF Mono',ui-monospace,monospace}
 svg.seq{display:block;min-width:580px;width:100%;height:auto}
 .seq-step{transition:opacity .4s ease}
+.seq-callout{min-height:52px;background:#0a0d14;border:1px solid #1e2333;border-radius:9px;padding:11px 16px;margin-bottom:20px;display:flex;gap:12px;align-items:flex-start;transition:opacity .3s}
+.seq-callout-num{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#3ecf8e;white-space:nowrap;padding-top:1px;min-width:44px}
+.seq-callout-body{font-size:12.5px;color:#8b95a5;line-height:1.65}
 
 /* ── RLS ── */
 .rls-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:40px;align-items:start}
@@ -158,6 +161,11 @@ footer a:hover{text-decoration:underline}
         <span class="step-ind" id="step-ind">step 0 / 9</span>
       </div>
 
+      <div class="seq-callout" id="seq-callout">
+        <span class="seq-callout-num" id="seq-callout-num">Intro</span>
+        <span class="seq-callout-body" id="seq-callout-body">Click Next to step through the OAuth 2.1 + PKCE flow.</span>
+      </div>
+
       <!-- viewBox chosen so it scales cleanly. Three actors at x=100, x=380, x=660 -->
       <svg class="seq" viewBox="0 0 760 570" xmlns="http://www.w3.org/2000/svg">
         <defs>
@@ -230,11 +238,11 @@ footer a:hover{text-decoration:underline}
           <text x="390" y="410" text-anchor="middle" fill="#c084fc" font-size="11" font-family="'SF Mono',monospace">GET /data  ·  Authorization: Bearer &lt;JWT&gt;</text>
         </g>
 
-        <!-- Step 8 — PostgREST validates JWT internally -->
+        <!-- Step 8 — PostgREST validates JWT (self) -->
         <g class="seq-step" id="s8" opacity="0">
-          <rect x="582" y="444" width="156" height="46" rx="6" fill="#0f1020" stroke="#2e2e7a" stroke-width="1" stroke-dasharray="3 2"/>
-          <text x="660" y="463" text-anchor="middle" fill="#7c8df8" font-size="10.5" font-weight="600" font-family="-apple-system,sans-serif">PostgREST validates JWT</text>
-          <text x="660" y="479" text-anchor="middle" fill="#4a5568" font-size="9.5" font-family="-apple-system,sans-serif">OIDC provider · auth.uid() = sub · RLS</text>
+          <path d="M660,438 C700,438 710,452 710,460 C710,468 700,482 660,482" stroke="#7c8df8" stroke-width="1.5" fill="none" marker-end="url(#ah-ind)"/>
+          <text x="716" y="457" fill="#7c8df8" font-size="11" font-family="'SF Mono',monospace">validate JWT</text>
+          <text x="716" y="471" fill="#4a5568" font-size="10" font-family="-apple-system,sans-serif">PostgREST · OIDC</text>
         </g>
 
         <!-- Step 9 — Tenant → App: notes -->
@@ -275,6 +283,7 @@ footer a:hover{text-decoration:underline}
           <div class="rls-card-body">
             <div class="policy-box"><span class="pc">-- reads: only your rows come back</span>
 <span class="pc">-- writes: user_id filled by DEFAULT auth.uid()</span>
+
 <span class="pk">CREATE POLICY</span> <span class="ps">"own rows"</span>
   <span class="pk">ON</span> tenant_notes <span class="pk">FOR ALL</span>
   <span class="pk">TO</span> authenticated
@@ -471,12 +480,31 @@ https://&lt;CC_PROJECT_REF&gt;.supabase.co/functions/v1/oidc</div>
 const TOTAL = 9;
 let step = 0;
 
+const CALLOUTS = [
+  { num: 'Intro',  body: 'Click Next to step through the OAuth 2.1 + PKCE flow.' },
+  { num: 'Step 1', body: 'App generates a random code_verifier, derives code_challenge = SHA-256(verifier), and redirects to the CC. The verifier stays in the browser — it never leaves until step 5.' },
+  { num: 'Step 2', body: 'CC redirects back to the app with ?_cc=login instead of rendering its own HTML form — this sidesteps Cloudflare forcing text/plain on Edge Function responses.' },
+  { num: 'Step 3', body: 'App submits credentials directly to the CC. If the user has access to this tenant (app_metadata.allowed_tenants), the CC issues an auth code and stores the code_challenge.' },
+  { num: 'Step 4', body: 'One-time auth code with a 5-minute TTL. It is single-use — the CC marks it consumed on first exchange, so replaying it does nothing.' },
+  { num: 'Step 5', body: 'App sends the original code_verifier alongside the code. CC hashes it and compares to the stored code_challenge — this is the PKCE proof that binds the code to the originating browser session.' },
+  { num: 'Step 6', body: 'CC signs the JWT with its RS256 private key (stored as an Edge Function secret). Tenants verify using the CC\'s public JWKS — no shared secret, no coordination needed.' },
+  { num: 'Step 7', body: 'App calls the tenant API directly from the browser with the JWT as a Bearer token. The tenant is a fully separate Supabase project — different database, different org.' },
+  { num: 'Step 8', body: 'PostgREST validates the JWT against the CC\'s JWKS (fetched once via the OIDC discovery document, then cached). Sets auth.uid() = JWT sub claim. RLS runs on every query.' },
+  { num: 'Step 9', body: 'Tenant returns only rows where user_id = auth.uid(). The tenant stores no user accounts — it trusts the JWT sub as the user identity. The function passes no user_id at all.' },
+];
+
 function el(id) { return document.getElementById(id); }
 
 function syncControls() {
   el('step-ind').textContent = `step ${step} / ${TOTAL}`;
   el('btn-prev').disabled = step === 0;
   el('btn-next').disabled = step >= TOTAL;
+}
+
+function syncCallout() {
+  const c = CALLOUTS[step];
+  el('seq-callout-num').textContent = c.num;
+  el('seq-callout-body').textContent = c.body;
 }
 
 function showStep(n, active) {
@@ -502,6 +530,7 @@ function nextStep() {
   step++;
   renderSteps();
   syncControls();
+  syncCallout();
 }
 
 function prevStep() {
@@ -510,6 +539,7 @@ function prevStep() {
   step--;
   renderSteps();
   syncControls();
+  syncCallout();
 }
 
 // ── RLS animation ────────────────────────────────────────────────────
