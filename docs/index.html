@@ -154,9 +154,8 @@ footer a:hover{text-decoration:underline}
     <div class="seq-wrap" id="seq-wrap">
       <div class="seq-controls">
         <button class="btn-seq" id="btn-prev" onclick="prevStep()" disabled>◀ Prev</button>
-        <button class="btn-seq" id="btn-play" onclick="handlePlayBtn()">▶ Play</button>
         <button class="btn-seq" id="btn-next" onclick="nextStep()">Next ▶</button>
-        <span class="step-ind" id="step-ind">step 0 / 10</span>
+        <span class="step-ind" id="step-ind">step 0 / 9</span>
       </div>
 
       <!-- viewBox chosen so it scales cleanly. Three actors at x=100, x=380, x=660 -->
@@ -231,22 +230,17 @@ footer a:hover{text-decoration:underline}
           <text x="390" y="410" text-anchor="middle" fill="#c084fc" font-size="11" font-family="'SF Mono',monospace">GET /data  ·  Authorization: Bearer &lt;JWT&gt;</text>
         </g>
 
-        <!-- Step 8 — Tenant → CC: GET /jwks -->
+        <!-- Step 8 — PostgREST validates JWT internally -->
         <g class="seq-step" id="s8" opacity="0">
-          <line x1="652" y1="452" x2="394" y2="452" stroke="#7c8df8" stroke-width="1.5" marker-end="url(#ah-ind)"/>
-          <text x="530" y="445" text-anchor="middle" fill="#7c8df8" font-size="11" font-family="'SF Mono',monospace">GET /jwks  (first call, then cached)</text>
+          <rect x="582" y="444" width="156" height="46" rx="6" fill="#0f1020" stroke="#2e2e7a" stroke-width="1" stroke-dasharray="3 2"/>
+          <text x="660" y="463" text-anchor="middle" fill="#7c8df8" font-size="10.5" font-weight="600" font-family="-apple-system,sans-serif">PostgREST validates JWT</text>
+          <text x="660" y="479" text-anchor="middle" fill="#4a5568" font-size="9.5" font-family="-apple-system,sans-serif">OIDC provider · auth.uid() = sub · RLS</text>
         </g>
 
-        <!-- Step 9 — CC → Tenant: public keys -->
+        <!-- Step 9 — Tenant → App: notes -->
         <g class="seq-step" id="s9" opacity="0">
-          <line x1="388" y1="486" x2="644" y2="486" stroke="#3ecf8e" stroke-width="1.5" marker-end="url(#ah-green)"/>
-          <text x="530" y="479" text-anchor="middle" fill="#3ecf8e" font-size="11" font-family="'SF Mono',monospace">{ keys }  RS256 public key</text>
-        </g>
-
-        <!-- Step 10 — Tenant → App: notes -->
-        <g class="seq-step" id="s10" opacity="0">
-          <line x1="652" y1="538" x2="114" y2="538" stroke="#c084fc" stroke-width="1.5" marker-end="url(#ah-purp)"/>
-          <text x="390" y="530" text-anchor="middle" fill="#c084fc" font-size="11" font-family="'SF Mono',monospace">{ user, tenant, notes }  ← rows scoped to JWT sub</text>
+          <line x1="652" y1="524" x2="114" y2="524" stroke="#c084fc" stroke-width="1.5" marker-end="url(#ah-purp)"/>
+          <text x="390" y="516" text-anchor="middle" fill="#c084fc" font-size="11" font-family="'SF Mono',monospace">{ user, tenant, notes }  ← rows scoped to JWT sub</text>
         </g>
       </svg>
     </div>
@@ -474,27 +468,15 @@ https://&lt;CC_PROJECT_REF&gt;.supabase.co/functions/v1/oidc</div>
 
 <script>
 // ── Sequence diagram ────────────────────────────────────────────────
-const TOTAL = 10;
+const TOTAL = 9;
 let step = 0;
-let timer = null;
-let playing = false;
 
 function el(id) { return document.getElementById(id); }
 
 function syncControls() {
   el('step-ind').textContent = `step ${step} / ${TOTAL}`;
-  el('btn-prev').disabled = step === 0 || playing;
-  el('btn-next').disabled = step >= TOTAL || playing;
-  if (playing) {
-    el('btn-play').textContent = '⏸ Pause';
-    el('btn-play').disabled = false;
-  } else if (step >= TOTAL) {
-    el('btn-play').textContent = '↺ Replay';
-    el('btn-play').disabled = false;
-  } else {
-    el('btn-play').textContent = step === 0 ? '▶ Play' : '▶ Resume';
-    el('btn-play').disabled = false;
-  }
+  el('btn-prev').disabled = step === 0;
+  el('btn-next').disabled = step >= TOTAL;
 }
 
 function showStep(n, active) {
@@ -515,60 +497,20 @@ function renderSteps() {
   }
 }
 
-function stopTimer() { clearTimeout(timer); timer = null; }
-
-function resetSeq() {
-  stopTimer(); playing = false; step = 0;
-  for (let i = 1; i <= TOTAL; i++) hideStep(i);
-  syncControls();
-}
-
-function tick() {
-  step++;
-  renderSteps();
-  syncControls();
-  if (step >= TOTAL) { playing = false; timer = null; }
-  else { timer = setTimeout(tick, 850); }
-}
-
-function play() {
-  if (playing || step >= TOTAL) return;
-  playing = true;
-  syncControls();
-  timer = setTimeout(tick, step === 0 ? 300 : 500);
-}
-
-function pause() {
-  stopTimer(); playing = false; syncControls();
-}
-
-function handlePlayBtn() {
-  if (playing) { pause(); }
-  else if (step >= TOTAL) { resetSeq(); setTimeout(play, 60); }
-  else { play(); }
-}
-
 function nextStep() {
-  if (playing || step >= TOTAL) return;
+  if (step >= TOTAL) return;
   step++;
   renderSteps();
   syncControls();
 }
 
 function prevStep() {
-  if (playing || step === 0) return;
+  if (step === 0) return;
   hideStep(step);
   step--;
   renderSteps();
   syncControls();
 }
-
-// Auto-play on scroll into view
-const seqObs = new IntersectionObserver(entries => {
-  if (entries[0].isIntersecting && step === 0 && !playing) setTimeout(play, 600);
-}, { threshold: 0.25 });
-const sw = document.getElementById('seq-wrap');
-if (sw) seqObs.observe(sw);
 
 // ── RLS animation ────────────────────────────────────────────────────
 const TARGET = 'a1b2c3d4';
