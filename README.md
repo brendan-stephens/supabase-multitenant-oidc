@@ -1,8 +1,8 @@
-# supabase-multitenant-oauth
+# supabase-multitenant-oidc
 
 A multi-tenant OAuth 2.1 + PKCE demo built entirely on [Supabase Edge Functions](https://supabase.com/docs/guides/functions). No third-party auth service — a custom OIDC provider runs as a single Edge Function and issues RS256-signed JWTs that tenant APIs verify independently.
 
-**[Live demo](https://brendan-stephens.github.io/supabase-multitenant-oauth/demo) · [Explainer](https://brendan-stephens.github.io/supabase-multitenant-oauth)**
+**[Live demo](https://brendan-stephens.github.io/supabase-multitenant-oidc/demo) · [Explainer](https://brendan-stephens.github.io/supabase-multitenant-oidc)**
 
 ---
 
